@@ -40,10 +40,12 @@ def summarize(text: str, max_chars: int = 500) -> str:
             "다음은 대학 웹사이트의 전체 텍스트입니다.\n"
             "- 상단/좌측/우측 메뉴, 풋터, '개인정보처리방침', '이메일 무단수집거부', 저작권 안내 등은 모두 무시하세요.\n"
             "- 오직 '공지사항' 영역의 실제 공지 본문만 사용해서 요약하세요.\n"
-            "- 특히 다음 정보는 꼭 포함해 주시고, 5줄 이내의 한국어 문장으로 간결하게 정리해 주세요:\n"
-            "  * 공지 제목\n"
-            "  * 일시(날짜와 시간)\n"
-            "  * 장소\n"
+            "- 제목은 이미 별도 필드로 관리하므로, 요약 문장에 제목을 반복해서 쓰지 마세요.\n"
+            "- 마크다운 문법(**굵게**, *기울임*, 목록 기호 -, *, 숫자. 등)을 사용하지 말고, 순수한 한국어 문장만 써 주세요.\n"
+            "- 특히 다음 정보가 포함되면 좋지만, 자연스러운 한글 문장 3~5줄 내에서 간결하게 정리해 주세요:\n"
+            "  - 일시(날짜와 시간)\n"
+            "  - 장소\n"
+            "  - 누가, 무엇을 하는지(강의/행사/모집 등 핵심 내용)\n"
             "- 개인정보 처리, 이메일 수집 거부, 저작권, 기타 안내 문구는 절대 요약에 포함하지 마세요.\n"
             f"최대 {max_chars}자 이내로 작성해 주세요.\n\n"
             f"--- 원문 시작 ---\n{text}\n--- 원문 끝 ---"
@@ -51,6 +53,9 @@ def summarize(text: str, max_chars: int = 500) -> str:
         response = model.generate_content(prompt)
         summary = (response.text or "").strip()
         print(f"[summarizer] Gemini summary received, length={len(summary)}")
+
+        # 혹시 남아 있을 수 있는 마크다운 굵게(**) 표시는 제거
+        summary = summary.replace("**", "")
 
         if not summary:
             return _fallback_summarize(text, max_chars)

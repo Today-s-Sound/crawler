@@ -1,6 +1,9 @@
 import os
 from typing import List, Dict, Optional
+from urllib.parse import urlparse
+
 from sites.dongguk_sw_board import DonggukSwBoardCrawler
+from sites.kbuwel_notice import KbuwelNoticeCrawler
 from services.subscription_client import fetch_subscriptions
 from services.notification_client import create_alert, update_subscription_last_seen
 from services.summarizer import summarize
@@ -25,19 +28,45 @@ def filter_new_posts(posts: List[Dict], last_seen_post_id: Optional[str]) -> Lis
     return new_posts
 
 def keyword_match(keyword: Optional[str], text: str) -> bool:
+    """
+    키워드가 없으면 False 반환(=매칭 없음).
+    키워드가 있으면 단순 포함 여부로 매칭 판단.
+    - 요약은 항상 수행하고,
+    - "키워드가 있고 + 매칭된 경우"에만 알림을 생성하기 위해 사용.
+    """
     if not keyword:
-        return True  # 키워드 없으면 전부 매칭
+        return False
     return keyword in text  # 간단한 포함 여부 (나중에 개선 가능)
+
+
+def get_crawler_for_subscription(sub: Dict):
+    """
+    구독의 site_url(또는 site_type)을 보고 어떤 크롤러를 쓸지 결정.
+    - sw.dongguk.edu → DonggukSwBoardCrawler
+    - web.kbuwel.or.kr → KbuwelNoticeCrawler
+    """
+    site_type = sub.get("site_type")
+    if site_type == "DONGGUK_SW":
+        return DonggukSwBoardCrawler()
+    if site_type == "KBUWEL":
+        return KbuwelNoticeCrawler()
+
+    # site_type 이 없으면 URL 도메인으로 추론
+    url = sub.get("site_url", "")
+    host = urlparse(url).netloc
+    if "sw.dongguk.edu" in host:
+        return DonggukSwBoardCrawler()
+    if "web.kbuwel.or.kr" in host:
+        return KbuwelNoticeCrawler()
+
+    # 기본값: 동국대 크롤러
+    return DonggukSwBoardCrawler()
+
 
 # “구독 하나에 대해 ‘이번 턴에 새로 생긴 알림’을 DB에 쌓는 단위 작업”
 def process_subscription(sub: Dict):
-    # 사이트 타입 식별 로직 (지금은 동국대 SW게시판 하나만)
-    # 지금은 “모든 구독이 다 동국대 SW게시판이다”라고 가정하는 상태.
-    # 나중에는 sub["site_type"] 같은 필드로 사이트 종류를 보고,
-    # if site_type == "DONGGUK_SW": DonggukSwBoardCrawler() 이런 식으로 분기할 예정
-    # 이런 식으로 분기할 예정이라 TODO로 남겨둔 것.
-    
-    crawler = DonggukSwBoardCrawler()
+    # 구독에 맞는 크롤러 선택 (동국대 SW / 넓은마을 등)
+    crawler = get_crawler_for_subscription(sub)
 
     posts = crawler.fetch_post_list(sub["site_url"])
     if not posts:
@@ -60,28 +89,36 @@ def process_subscription(sub: Dict):
 
     print(f"[Sub {sub['id']}] 새 게시물 {len(new_posts)}개")
 
-    for post in new_posts: # 새로 올라온 게시물들(여러 개일 수도 있음)을 하나씩 순회.
+    for post in new_posts:  # 새로 올라온 게시물들(여러 개일 수도 있음)을 하나씩 순회.
         content_raw = crawler.fetch_post_content(post["url"])
 
-        # 키워드 필터
-        if not keyword_match(sub.get("keyword"), post["title"] + " " + content_raw):
-            print(f"  - 키워드 불일치로 스킵: {post['title']}")
-            continue
+        # 키워드 매칭 여부 (있으면 포함 여부, 없으면 False)
+        matched = keyword_match(sub.get("keyword"), post["title"] + " " + content_raw)
 
+        # 새 글이면 요약은 항상 수행
         summary = summarize(content_raw)
 
-        # 알림 생성 요청 데이터 생성
+        # 어떤 글이 어떤 요약으로 DB에 들어가는지 눈으로 확인할 수 있게 로그 출력
+        print(f"\n[Sub {sub['id']}] 요약 대상 게시글: {post['title']}")
+        print(f"[Sub {sub['id']}] 요약 본문 (앞 300자): {summary[:300]}")
+
+        # 알림 생성 요청 데이터 생성 (메타데이터를 모두 포함)
         alert_payload = {
             "user_id": sub["user_id"],
             "subscription_id": sub["id"],
+            "site_alias": sub.get("site_alias"),
             "site_post_id": post["id"],
             "title": post["title"],
             "url": post["url"],
-            "content_raw": content_raw, # 원문 전체 텍스트 
-            "content_summary": summary, # 요약 텍스트
+            "published_at": post.get("date"),
+            "content_raw": content_raw,     # 원문 전체 텍스트
+            "content_summary": summary,     # 요약 텍스트
             "is_urgent": sub["urgent"],
+            "keyword_matched": matched,
         }
 
+        # 키워드 유무/매칭과 상관없이 항상 요약 + 알림 생성
+        # (keyword_matched 플래그는 서버/프론트에서 필터링·우선순위용으로 사용 가능)
         create_alert(alert_payload)
 
     # 마지막으로 last_seen_post_id 갱신
@@ -97,6 +134,34 @@ def main():
             process_subscription(sub)
         except Exception as e:
             print(f"[Sub {sub['id']}] 처리 중 오류: {e}")
+
+def debug_kbuwel_first_post():
+    """
+    넓은마을(https://web.kbuwel.or.kr/home/notice?next=/) 공지 목록/본문이
+    정상적으로 크롤링되는지 단독으로 테스트하는 함수.
+    - 백엔드, 구독 정보, 알림 생성과는 무관하게 KbuwelNoticeCrawler만 검증할 때 사용.
+    """
+    url = "https://web.kbuwel.or.kr/home/notice?next=/"
+    crawler = KbuwelNoticeCrawler()
+
+    posts = crawler.fetch_post_list(url)
+    print("[KBUWEL DEBUG] 게시글 개수:", len(posts))
+    if not posts:
+        print("[KBUWEL DEBUG] 게시글이 없습니다.")
+        return
+
+    first_post = posts[0]
+    print("[KBUWEL DEBUG] 첫 게시글 메타데이터:", first_post)
+
+    content = crawler.fetch_post_content(first_post["url"])
+    print("[KBUWEL DEBUG] 첫 게시글 본문 (앞 500자):")
+    print(content[:500])
+
+    # 요약기(summarizer)를 통한 요약 결과 확인
+    summary = summarize(content)
+    print("\n[KBUWEL DEBUG] 요약 결과:")
+    print(summary)
+
 
 if __name__ == "__main__":
     main()

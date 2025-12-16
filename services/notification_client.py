@@ -10,12 +10,15 @@ def create_alert(alert: Dict) -> None:
     {
       "user_id": 10,
       "subscription_id": 1,
+      "site_alias": "동국대 SW공지",
       "site_post_id": "12345",
       "title": "...",
       "url": "https://...",
+      "published_at": "2025-11-14",
       "content_raw": "...",
       "content_summary": "...",
-      "is_urgent": True
+      "is_urgent": True,
+      "keyword_matched": true
     }
     """
     res = requests.post(f"{BACKEND_BASE_URL}/internal/alerts", json=alert)
