@@ -71,8 +71,11 @@ def get_crawler_for_subscription(sub: Dict):
 
 # “구독 하나에 대해 ‘이번 턴에 새로 생긴 알림’을 DB에 쌓는 단위 작업”
 def process_subscription(sub: Dict):
+    print(f"[Sub {sub['id']}] site_url={sub['site_url']}")
+    print(f"[Sub {sub['id']}] crawler={type(crawler).__name__}")
     # 구독에 맞는 크롤러 선택 (동국대 SW / 넓은마을 등)
     crawler = get_crawler_for_subscription(sub)
+    print(f"[Sub {sub['id']}] crawler={type(crawler).__name__}")
 
     posts = crawler.fetch_post_list(sub["site_url"])
     if not posts:
