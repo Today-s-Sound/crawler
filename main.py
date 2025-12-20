@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 from sites.dongguk_sw_board import DonggukSwBoardCrawler
 from sites.kbuwel_notice import KbuwelNoticeCrawler
+from sites.ablenews import AbleNewsCrawler
 from services.subscription_client import fetch_subscriptions
 from services.notification_client import create_alert, update_subscription_last_seen
 from services.summarizer import summarize
@@ -42,14 +43,17 @@ def keyword_match(keyword: Optional[str], text: str) -> bool:
 def get_crawler_for_subscription(sub: Dict):
     """
     구독의 site_url(또는 site_type)을 보고 어떤 크롤러를 쓸지 결정.
-    - sw.dongguk.edu → DonggukSwBoardCrawler
-    - web.kbuwel.or.kr → KbuwelNoticeCrawler
+    - sw.dongguk.edu        → DonggukSwBoardCrawler
+    - web.kbuwel.or.kr      → KbuwelNoticeCrawler
+    - www.ablenews.co.kr    → AbleNewsCrawler
     """
     site_type = sub.get("site_type")
     if site_type == "DONGGUK_SW":
         return DonggukSwBoardCrawler()
     if site_type == "KBUWEL":
         return KbuwelNoticeCrawler()
+    if site_type == "ABLE_NEWS":
+        return AbleNewsCrawler()
 
     # site_type 이 없으면 URL 도메인으로 추론
     url = sub.get("site_url", "")
@@ -58,6 +62,8 @@ def get_crawler_for_subscription(sub: Dict):
         return DonggukSwBoardCrawler()
     if "web.kbuwel.or.kr" in host:
         return KbuwelNoticeCrawler()
+    if "ablenews.co.kr" in host:
+        return AbleNewsCrawler()
 
     # 기본값: 동국대 크롤러
     return DonggukSwBoardCrawler()
