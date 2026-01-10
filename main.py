@@ -71,7 +71,7 @@ def get_crawler_for_subscription(sub: Dict):
 
 # “구독 하나에 대해 ‘이번 턴에 새로 생긴 알림’을 DB에 쌓는 단위 작업”
 def process_subscription(sub: Dict):
-    # 구독에 맞는 크롤러 선택 (동국대 SW / 넓은마을 등)
+    # 구독에 맞는 크롤러 선택 (동국대 SW / 넓은마을 등등)
     crawler = get_crawler_for_subscription(sub)
     print(f"[Sub {sub['id']}] site_url={sub['site_url']}")
     print(f"[Sub {sub['id']}] crawler={type(crawler).__name__}")
@@ -83,9 +83,40 @@ def process_subscription(sub: Dict):
     last_seen_id = sub.get("last_seen_post_id")
     latest_id = posts[0]["id"]
 
-    # 첫 실행: 기준점만 설정 (알림 생성 X) -> 이미 올라와 있던 글들은 과거 글이라고 생각하고 무시.
+    # 첫 실행: 가장 최신 게시글 1개를 바로 요약·알림으로 보내고, 그 게시글을 기준점으로 설정.
     if last_seen_id is None:
-        print(f"[Sub {sub['id']}] 첫 실행 - 기준점만 설정 (last_seen_post_id={latest_id})")
+        latest_post = posts[0]
+        print(f"[Sub {sub['id']}] 첫 실행 - 최신 게시글 1개를 요약 및 알림 생성 (post_id={latest_id})")
+
+        content_raw = crawler.fetch_post_content(latest_post["url"])
+
+        # 키워드 매칭 여부 (있으면 포함 여부, 없으면 False)
+        matched = keyword_match(sub.get("keyword"),
+                                latest_post["title"] + " " + content_raw)
+
+        # 새 글이면 요약은 항상 수행
+        summary = summarize(content_raw)
+
+        # 어떤 글이 어떤 요약으로 DB에 들어가는지 눈으로 확인할 수 있게 로그 출력
+        print(f"\n[Sub {sub['id']}] 요약 대상 게시글: {latest_post['title']}")
+        print(f"[Sub {sub['id']}] 요약 본문 (앞 300자): {summary[:300]}")
+
+        # 알림 생성 요청 데이터 생성 (메타데이터를 모두 포함)
+        alert_payload = {
+            "user_id": sub["user_id"],
+            "subscription_id": sub["id"],
+            "site_alias": sub.get("site_alias"),
+            "site_post_id": latest_post["id"],
+            "title": latest_post["title"],
+            "url": latest_post["url"],
+            "published_at": latest_post.get("date"),
+            "content_raw": content_raw,     # 원문 전체 텍스트
+            "content_summary": summary,     # 요약 텍스트
+            "is_urgent": sub["urgent"],
+            "keyword_matched": matched,
+        }
+
+        create_alert(alert_payload)
         update_subscription_last_seen(sub["id"], latest_id)
         return
 
@@ -174,43 +205,3 @@ def debug_kbuwel_first_post():
 if __name__ == "__main__":
     main()
 
-
-# def debug_fetch_first_post():
-#     """
-#     첫 번째 구독의 첫 번째 게시물 목록/본문이 정상적으로 크롤링되는지 확인용 디버그 함수.
-#     크롤링/요약/알림과는 무관하게, 크롤링 자체가 잘 되는지만 확인할 때 사용.
-#     """
-#     subs = fetch_subscriptions()
-#     print(f"[DEBUG] 구독 개수: {len(subs)}")
-#     if not subs:
-#         print("[DEBUG] 구독이 없습니다.")
-#         return
-
-#     sub = subs[0]
-#     print(f"[DEBUG] 첫 구독 ID={sub.get('id')}, site_url={sub.get('site_url')}")
-
-#     crawler = DonggukSwBoardCrawler()
-#     posts = crawler.fetch_post_list(sub["site_url"])
-#     print(f"[DEBUG] 게시물 개수: {len(posts)}")
-#     if not posts:
-#         print("[DEBUG] 게시물이 없습니다.")
-#         return
-
-#     first_post = posts[0]
-#     print(f"[DEBUG] 첫 게시물 메타데이터: {first_post}")
-
-#     content_raw = crawler.fetch_post_content(first_post["url"])
-#     print("[DEBUG] 첫 게시물 본문 (앞 500자):")
-#     print(content_raw[:2000])
-
-#     # 요약기(summarizer)를 통한 요약 결과 확인
-#     # summary = summarize(content_raw)
-#     # print("\n[DEBUG] 요약 결과:")
-#     # print(summary)
-
-
-# if __name__ == "__main__":
-#     if True:
-#         debug_fetch_first_post()
-#     else:
-#         main()
