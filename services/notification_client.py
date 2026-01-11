@@ -17,7 +17,6 @@ def create_alert(alert: Dict) -> None:
       "published_at": "2025-11-14",
       "content_raw": "...",
       "content_summary": "...",
-      "is_urgent": True,
       "keyword_matched": true
     }
     """

@@ -10,7 +10,7 @@ def fetch_subscriptions() -> List[Dict]:
     백엔드(/internal/subscriptions)에 GET 요청을 보내서
     “활성화된 구독 목록”을 JSON으로 받는다.
 
-    현재 백엔드 응답 형식:
+    현재 백엔드 응답 형식(InternalSubscriptionResponseDto):
     {
       "errorCode": null,
       "message": "OK",
@@ -21,8 +21,7 @@ def fetch_subscriptions() -> List[Dict]:
           "site_url": "https://sw.dongguk.edu/board/list.do?id=S181",
           "site_alias": "동국대 SW공지",
           "keyword": "장학",
-          "urgent": true,
-          "last_seen_post_id": "12345"
+          "last_seen_post_id": "12345"  # 없으면 null 로 내려옴
         },
         ...
       ]
