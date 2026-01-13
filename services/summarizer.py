@@ -16,11 +16,32 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 
-def _fallback_summarize(text: str, max_chars: int = 2000) -> str:
-    """API 실패 시 기존처럼 앞부분만 자르는 폴백 로직."""
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "..."
+def _fallback_summarize(text: str, max_chars: int = 500) -> str:
+    """
+    API 실패 시 폴백 로직.
+    - 원문에서 메뉴/네비게이션이 아닌 실제 본문 부분만 추출 시도
+    - 줄바꿈으로 분리해서 짧은 메뉴 항목들(10자 미만)은 스킵
+    """
+    lines = text.split("\n")
+    content_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        # 빈 줄이나 너무 짧은 줄(메뉴 항목)은 스킵
+        if len(line) < 10:
+            continue
+        # 메뉴 키워드가 포함된 줄 스킵
+        menu_keywords = ["메뉴", "로그인", "회원가입", "검색", "홈", "공지사항", "자료실", 
+                        "갤러리", "커뮤니티", "바로가기", "사이트맵", "개인정보", "이용약관"]
+        if any(kw in line for kw in menu_keywords):
+            continue
+        content_lines.append(line)
+    
+    result = " ".join(content_lines)
+    
+    if len(result) <= max_chars:
+        return result if result else "[요약 생성 실패]"
+    return result[:max_chars] + "..."
 
 
 def summarize(text: str, max_chars: int = 500) -> str:
@@ -67,6 +88,7 @@ def summarize(text: str, max_chars: int = 500) -> str:
         return summary
 
     except Exception as e:
-        # 로그만 찍고 폴백
-        print(f"[summarizer] Gemini 요약 호출 실패: {e}")
+        # 로그만 찍고 폴백 (어떤 예외인지 명확히 기록)
+        print(f"[summarizer] ⚠️ Gemini 요약 호출 실패: {type(e).__name__}: {e}")
+        print(f"[summarizer] 폴백 요약 사용 (원문 길이: {len(text)}자)")
         return _fallback_summarize(text, max_chars)

@@ -83,8 +83,12 @@ class KbuwelNoticeCrawler(SiteCrawler):
             soup.find("main")
             or soup.find("article")
             or soup.find("section")
-            or soup
         )
+
+        # 본문을 못 찾으면 빈 문자열 반환 (전체 페이지 반환 방지)
+        if content is None:
+            print(f"[KbuwelNoticeCrawler] 본문 영역을 찾지 못했습니다: {post_url}")
+            return ""
 
         return content.get_text("\n", strip=True)
 

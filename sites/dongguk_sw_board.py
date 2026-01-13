@@ -64,13 +64,19 @@ class DonggukSwBoardCrawler(SiteCrawler):
         res.encoding = res.apparent_encoding
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 실제 HTML 구조에 맞게 class 이름 조정 필요
+        # 실제 HTML 구조에 맞게 class 이름 조정 (하이픈 주의!)
         content = (
-            soup.find("div", class_="board_view") # 실제로 본문을 감싸는 영역 1트
-            or soup.find("div", class_="content") # 실제로 본문을 감싸는 영역 2트
-            or soup # 그래도 못 찾았으면 그냥 전체 문서에서 텍스트 뽑아버리기
+            soup.find("div", class_="board-view")  # 동국대 SW교육원 본문 영역 (하이픈!)
+            or soup.find("div", class_="board_view")
+            or soup.find("div", class_="content")
         )
-        return content.get_text("\n", strip=True) # 텍스트를 하나의 문자열로 뽑아내고, 앞뒤 공백은 제거
+        
+        # 본문을 못 찾으면 빈 문자열 반환 (전체 페이지 반환 방지)
+        if content is None:
+            print(f"[DonggukSwBoardCrawler] 본문 영역을 찾지 못했습니다: {post_url}")
+            return ""
+        
+        return content.get_text("\n", strip=True)
 
     # 게시물 ID 추출 하는 로직
     def _extract_id_from_href(self, href: str) -> str:

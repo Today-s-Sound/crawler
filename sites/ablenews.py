@@ -91,8 +91,12 @@ class AbleNewsCrawler(SiteCrawler):
             or soup.find("div", class_="article")
             or soup.find("div", class_="article-body")
             or soup.find("div", id="content")
-            or soup
         )
+
+        # 본문을 못 찾으면 빈 문자열 반환 (전체 페이지 반환 방지)
+        if content is None:
+            print(f"[AbleNewsCrawler] 본문 영역을 찾지 못했습니다: {post_url}")
+            return ""
 
         return content.get_text("\n", strip=True)
 

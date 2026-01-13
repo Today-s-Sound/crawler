@@ -99,6 +99,12 @@ def process_subscription(
             content_raw = crawler.fetch_post_content(latest_post["url"])
             content_cache[cache_key] = content_raw
 
+        # 본문이 비어있으면 스킵 (크롤러가 본문 영역을 찾지 못한 경우)
+        if not content_raw.strip():
+            print(f"[Sub {sub['id']}] 본문이 비어있어 스킵합니다: {latest_post['url']}")
+            update_subscription_last_seen(sub["id"], latest_id)
+            return
+
         # 키워드 매칭 여부 (있으면 포함 여부, 없으면 False)
         matched = keyword_match(sub.get("keyword"),
                                 latest_post["title"] + " " + content_raw)
@@ -106,9 +112,15 @@ def process_subscription(
         # 새 글이면 요약은 항상 수행 (동일 게시글에 대해서는 summary_cache 로 재사용)
         if cache_key in summary_cache:
             summary = summary_cache[cache_key]
+            print(f"[Sub {sub['id']}] 요약 캐시 히트: {cache_key}")
         else:
             summary = summarize(content_raw)
-            summary_cache[cache_key] = summary
+            # 요약 실패 표시가 없는 경우에만 캐시 (실패 시 다음 subscription에서 재시도)
+            if "[요약 생성 실패]" not in summary:
+                summary_cache[cache_key] = summary
+                print(f"[Sub {sub['id']}] 요약 캐시 저장: {cache_key}")
+            else:
+                print(f"[Sub {sub['id']}] 요약 실패, 캐시 안함: {cache_key}")
 
         # 어떤 글이 어떤 요약으로 DB에 들어가는지 눈으로 확인할 수 있게 로그 출력
         print(f"\n[Sub {sub['id']}] 요약 대상 게시글: {latest_post['title']}")
@@ -148,15 +160,26 @@ def process_subscription(
             content_raw = crawler.fetch_post_content(post["url"])
             content_cache[cache_key] = content_raw
 
+        # 본문이 비어있으면 이 게시글은 스킵
+        if not content_raw.strip():
+            print(f"[Sub {sub['id']}] 본문이 비어있어 스킵합니다: {post['url']}")
+            continue
+
         # 키워드 매칭 여부 (있으면 포함 여부, 없으면 False)
         matched = keyword_match(sub.get("keyword"), post["title"] + " " + content_raw)
 
         # 새 글이면 요약은 항상 수행 (동일 게시글에 대해서는 summary_cache 로 재사용)
         if cache_key in summary_cache:
             summary = summary_cache[cache_key]
+            print(f"[Sub {sub['id']}] 요약 캐시 히트: {cache_key}")
         else:
             summary = summarize(content_raw)
-            summary_cache[cache_key] = summary
+            # 요약 실패 표시가 없는 경우에만 캐시 (실패 시 다음 subscription에서 재시도)
+            if "[요약 생성 실패]" not in summary:
+                summary_cache[cache_key] = summary
+                print(f"[Sub {sub['id']}] 요약 캐시 저장: {cache_key}")
+            else:
+                print(f"[Sub {sub['id']}] 요약 실패, 캐시 안함: {cache_key}")
 
         # 어떤 글이 어떤 요약으로 DB에 들어가는지 눈으로 확인할 수 있게 로그 출력
         print(f"\n[Sub {sub['id']}] 요약 대상 게시글: {post['title']}")
