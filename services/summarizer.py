@@ -1,7 +1,9 @@
 import os
+import time
 from typing import Optional
 
 import google.generativeai as genai
+from google.api_core import exceptions
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -16,7 +18,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 
-def _fallback_summarize(text: str, max_chars: int = 500) -> str:
+def _fallback_summarize(text: str, max_chars: int = 1000) -> str:
     """
     API 실패 시 폴백 로직.
     - 원문에서 메뉴/네비게이션이 아닌 실제 본문 부분만 추출 시도
@@ -47,48 +49,62 @@ def _fallback_summarize(text: str, max_chars: int = 500) -> str:
 def summarize(text: str, max_chars: int = 500) -> str:
     """
     Gemini API를 사용해서 요약을 생성한다.
-    - GEMINI_API_KEY가 없거나, 호출 실패 시에는 기존처럼 앞부분만 자른다.
+    - Rate Limit(429) 발생 시 지수 백오프(Exponential Backoff)로 재시도한다.
     """
-    # API 키 없으면 바로 폴백
     if not GEMINI_API_KEY:
         print("[summarizer] GEMINI_API_KEY not set, use fallback summarizer")
         return _fallback_summarize(text, max_chars)
 
-    try:
-        print("[summarizer] Calling Gemini API for summarization...")
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = (
-            "다음은 대학 웹사이트의 전체 텍스트입니다.\n"
-            "- 상단/좌측/우측 메뉴, 풋터, '개인정보처리방침', '이메일 무단수집거부', 저작권 안내 등은 모두 무시하세요.\n"
-            "- 오직 '공지사항' 영역의 실제 공지 본문만 사용해서 요약하세요.\n"
-            "- 제목은 이미 별도 필드로 관리하므로, 요약 문장에 제목을 반복해서 쓰지 마세요.\n"
-            "- 마크다운 문법(**굵게**, *기울임*, 목록 기호 -, *, 숫자. 등)을 사용하지 말고, 순수한 한국어 문장만 써 주세요.\n"
-            "- 특히 다음 정보가 포함되면 좋지만, 자연스러운 한글 문장 3~5줄 내에서 간결하게 정리해 주세요:\n"
-            "  - 일시(날짜와 시간)\n"
-            "  - 장소\n"
-            "  - 누가, 무엇을 하는지(강의/행사/모집 등 핵심 내용)\n"
-            "- 개인정보 처리, 이메일 수집 거부, 저작권, 기타 안내 문구는 절대 요약에 포함하지 마세요.\n"
-            f"최대 {max_chars}자 이내로 작성해 주세요.\n\n"
-            f"--- 원문 시작 ---\n{text}\n--- 원문 끝 ---"
-        )
-        response = model.generate_content(prompt)
-        summary = (response.text or "").strip()
-        print(f"[summarizer] Gemini summary received, length={len(summary)}")
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    prompt = (
+        "다음은 웹사이트의 전체 텍스트입니다.\n"
+        "- 상단/좌측/우측 메뉴, 풋터, '개인정보처리방침', '이메일 무단수집거부', 저작권 안내 등은 모두 무시하세요.\n"
+        "- 오직 실제 공지 본문만 사용해서 요약하세요.\n"
+        "- 제목은 이미 별도 필드로 관리하므로, 요약 문장에 제목을 반복해서 쓰지 마세요.\n"
+        "- 마크다운 문법(**굵게**, *기울임*, 목록 기호 -, *, 숫자. 등)을 사용하지 말고, 순수한 한국어 문장만 써 주세요.\n"
+        "- 특히 다음 정보가 포함되면 좋지만, 자연스러운 한글 문장 3~5줄 내에서 간결하게 정리해 주세요:\n"
+        "  - 일시(날짜와 시간)\n"
+        "  - 장소\n"
+        "  - 누가, 무엇을 하는지(강의/행사/모집 등 핵심 내용)\n"
+        "- 개인정보 처리, 이메일 수집 거부, 저작권, 기타 안내 문구는 절대 요약에 포함하지 마세요.\n"
+        f"최대 {max_chars}자 이내로 작성해 주세요.\n\n"
+        f"--- 원문 시작 ---\n{text}\n--- 원문 끝 ---"
+    )
 
-        # 혹시 남아 있을 수 있는 마크다운 굵게(**) 표시는 제거
-        summary = summary.replace("**", "")
+    max_retries = 3  # 최대 3번까지 재시도
+    base_delay = 15  # 대기 시간 (초) - 로그에서 12초 대기를 권장했으므로 15초로 설정
 
-        if not summary:
-            return _fallback_summarize(text, max_chars)
+    for attempt in range(max_retries):
+        try:
+            print(f"[summarizer] Calling Gemini API... (Attempt {attempt + 1}/{max_retries})")
+            response = model.generate_content(prompt)
+            summary = (response.text or "").strip()
+            
+            summary = summary.replace("**", "")  # 마크다운 제거
+            
+            if not summary:
+                return _fallback_summarize(text, max_chars)
 
-        # 혹시 너무 길면 잘라주기
-        if len(summary) > max_chars:
-            summary = summary[:max_chars] + "..."
+            if len(summary) > max_chars:
+                summary = summary[:max_chars] + "..."
 
-        return summary
+            print(f"[summarizer] Success! length={len(summary)}")
+            return summary
 
-    except Exception as e:
-        # 로그만 찍고 폴백 (어떤 예외인지 명확히 기록)
-        print(f"[summarizer] ⚠️ Gemini 요약 호출 실패: {type(e).__name__}: {e}")
-        print(f"[summarizer] 폴백 요약 사용 (원문 길이: {len(text)}자)")
-        return _fallback_summarize(text, max_chars)
+        except exceptions.ResourceExhausted:
+            # 429 에러 발생 시 대기 후 재시도
+            if attempt < max_retries - 1:
+                wait_time = base_delay * (attempt + 1)
+                print(f"[summarizer] ⚠️ Quota Exceeded (429). Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print("[summarizer] ❌ Max retries reached for Quota Exceeded.")
+        
+        except Exception as e:
+            # 그 외 에러는 바로 폴백
+            print(f"[summarizer] ⚠️ Error: {type(e).__name__}: {e}")
+            break
+
+    # 모든 시도 실패 시 폴백
+    print(f"[summarizer] 폴백 요약 사용 (원문 길이: {len(text)}자)")
+    return _fallback_summarize(text, max_chars)

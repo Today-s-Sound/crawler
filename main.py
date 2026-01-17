@@ -92,7 +92,11 @@ def process_subscription(
         latest_post = posts[0]
         print(f"[Sub {sub['id']}] 첫 실행 - 최신 게시글 1개를 요약 및 알림 생성 (post_id={latest_id})")
 
-        cache_key = latest_post["id"] or latest_post["url"]
+        cache_key = latest_post.get("id") or latest_post["url"]
+        if not cache_key:
+            print(f"[Sub {sub['id']}] 캐시 키가 없어 스킵합니다")
+            update_subscription_last_seen(sub["id"], latest_id)
+            return
         if cache_key in content_cache:
             content_raw = content_cache[cache_key]
         else:
@@ -153,14 +157,17 @@ def process_subscription(
     print(f"[Sub {sub['id']}] 새 게시물 {len(new_posts)}개")
 
     for post in new_posts:  # 새로 올라온 게시물들(여러 개일 수도 있음)을 하나씩 순회.
-        cache_key = post["id"] or post["url"]
+        cache_key = post.get("id") or post["url"]
+        if not cache_key:
+            print(f"[Sub {sub['id']}] 캐시 키가 없어 스킵합니다: {post['url']}")
+            continue
         if cache_key in content_cache:
             content_raw = content_cache[cache_key]
         else:
             content_raw = crawler.fetch_post_content(post["url"])
             content_cache[cache_key] = content_raw
 
-        # 본문이 비어있으면 이 게시글은 스킵
+        # 본문이 비어있으면 이 게시글은 스킵 (하지만 last_seen_id는 업데이트)
         if not content_raw.strip():
             print(f"[Sub {sub['id']}] 본문이 비어있어 스킵합니다: {post['url']}")
             continue
@@ -239,7 +246,8 @@ def main():
             try:
                 process_subscription(sub, crawler, posts, content_cache, summary_cache)
             except Exception as e:
-                print(f"[Sub {sub['id']}] 처리 중 오류: {e}")
+                sub_id = sub.get('id', 'unknown') if 'sub' in locals() else 'unknown'
+                print(f"[Sub {sub_id}] 처리 중 오류: {e}")
 
 def debug_kbuwel_first_post():
     """

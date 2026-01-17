@@ -9,7 +9,7 @@ BASE_URL = "https://sw.dongguk.edu"
 class DonggukSwBoardCrawler(SiteCrawler):
     def fetch_post_list(self, list_url: str) -> List[Dict]:
         # 네트워크 이슈로 무한 대기하지 않도록 타임아웃 지정
-        res = requests.get(list_url, timeout=5)
+        res = requests.get(list_url, timeout=10)
         res.raise_for_status()
         res.encoding = res.apparent_encoding
 
