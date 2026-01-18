@@ -1,7 +1,10 @@
 import re
+import time
 from typing import List, Dict
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 
@@ -9,6 +12,32 @@ from .base import SiteCrawler
 
 
 BASE_URL = "https://www.ablenews.co.kr"
+
+
+def _create_session():
+    """
+    재시도 로직과 User-Agent가 포함된 세션 생성
+    """
+    session = requests.Session()
+    
+    # 재시도 전략: SSL 에러, 연결 에러 등에 대해 최대 3번 재시도
+    retry_strategy = Retry(
+        total=3,  # 최대 3번 재시도
+        backoff_factor=1,  # 1초, 2초, 4초 대기
+        status_forcelist=[429, 500, 502, 503, 504],  # 이 HTTP 상태 코드에 대해 재시도
+        allowed_methods=["GET"],  # GET 요청만 재시도
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # User-Agent 설정 (일반 브라우저처럼 보이게)
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+    
+    return session
 
 
 class AbleNewsCrawler(SiteCrawler):
@@ -19,9 +48,19 @@ class AbleNewsCrawler(SiteCrawler):
     """
 
     def fetch_post_list(self, list_url: str) -> List[Dict]:
-        res = requests.get(list_url)
-        res.raise_for_status()
-        res.encoding = res.apparent_encoding
+        try:
+            session = _create_session()
+            res = session.get(list_url, timeout=10)
+            res.raise_for_status()
+            res.encoding = res.apparent_encoding
+        except requests.exceptions.SSLError as e:
+            print(f"[AbleNewsCrawler] SSL 에러 발생: {list_url}")
+            print(f"[AbleNewsCrawler] 재시도 후에도 실패: {e}")
+            return []  # 빈 리스트 반환하여 크롤러 계속 진행
+        except requests.exceptions.RequestException as e:
+            print(f"[AbleNewsCrawler] 요청 실패: {list_url}")
+            print(f"[AbleNewsCrawler] 에러: {e}")
+            return []
 
         soup = BeautifulSoup(res.text, "html.parser")
 
@@ -78,9 +117,20 @@ class AbleNewsCrawler(SiteCrawler):
         """
         기사 상세 페이지에서 본문 텍스트를 최대한 깨끗하게 추출한다.
         """
-        res = requests.get(post_url)
-        res.raise_for_status()
-        res.encoding = res.apparent_encoding
+        try:
+            session = _create_session()
+            time.sleep(0.5)  # 요청 간 0.5초 대기 (서버 부담 감소)
+            res = session.get(post_url, timeout=10)
+            res.raise_for_status()
+            res.encoding = res.apparent_encoding
+        except requests.exceptions.SSLError as e:
+            print(f"[AbleNewsCrawler] SSL 에러 발생: {post_url}")
+            print(f"[AbleNewsCrawler] 재시도 후에도 실패: {e}")
+            return ""  # 빈 문자열 반환하여 이 게시글은 스킵
+        except requests.exceptions.RequestException as e:
+            print(f"[AbleNewsCrawler] 요청 실패: {post_url}")
+            print(f"[AbleNewsCrawler] 에러: {e}")
+            return ""
 
         soup = BeautifulSoup(res.text, "html.parser")
 
