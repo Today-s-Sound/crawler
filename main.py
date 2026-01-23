@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from sites.dongguk_sw_board import DonggukSwBoardCrawler
 from sites.kbuwel_notice import KbuwelNoticeCrawler
 from sites.ablenews import AbleNewsCrawler
+from sites.kead_notice import KeadNoticeCrawler
 from services.subscription_client import fetch_subscriptions
 from services.notification_client import create_alert, update_subscription_last_seen
 from services.summarizer import summarize
@@ -96,6 +97,7 @@ def get_crawler_for_subscription(sub: Dict):
     - sw.dongguk.edu        → DonggukSwBoardCrawler
     - web.kbuwel.or.kr      → KbuwelNoticeCrawler
     - www.ablenews.co.kr    → AbleNewsCrawler
+    - www.kead.or.kr       → KeadNoticeCrawler
     """
     site_type = sub.get("site_type")
     if site_type == "DONGGUK_SW":
@@ -104,6 +106,8 @@ def get_crawler_for_subscription(sub: Dict):
         return KbuwelNoticeCrawler()
     if site_type == "ABLE_NEWS":
         return AbleNewsCrawler()
+    if site_type == "KEAD":
+        return KeadNoticeCrawler()
 
     # site_type 이 없으면 URL 도메인으로 추론
     url = sub.get("site_url", "")
@@ -114,6 +118,8 @@ def get_crawler_for_subscription(sub: Dict):
         return KbuwelNoticeCrawler()
     if "ablenews.co.kr" in host:
         return AbleNewsCrawler()
+    if "kead.or.kr" in host:
+        return KeadNoticeCrawler()
 
     # 기본값: 동국대 크롤러
     return DonggukSwBoardCrawler()
@@ -304,33 +310,6 @@ def main():
             except Exception as e:
                 sub_id = sub.get('id', 'unknown') if 'sub' in locals() else 'unknown'
                 print(f"[Sub {sub_id}] 처리 중 오류: {e}")
-
-def debug_kbuwel_first_post():
-    """
-    넓은마을(https://web.kbuwel.or.kr/home/notice?next=/) 공지 목록/본문이
-    정상적으로 크롤링되는지 단독으로 테스트하는 함수.
-    - 백엔드, 구독 정보, 알림 생성과는 무관하게 KbuwelNoticeCrawler만 검증할 때 사용.
-    """
-    url = "https://web.kbuwel.or.kr/home/notice?next=/"
-    crawler = KbuwelNoticeCrawler()
-
-    posts = crawler.fetch_post_list(url)
-    print("[KBUWEL DEBUG] 게시글 개수:", len(posts))
-    if not posts:
-        print("[KBUWEL DEBUG] 게시글이 없습니다.")
-        return
-
-    first_post = posts[0]
-    print("[KBUWEL DEBUG] 첫 게시글 메타데이터:", first_post)
-
-    content = crawler.fetch_post_content(first_post["url"])
-    print("[KBUWEL DEBUG] 첫 게시글 본문 (앞 500자):")
-    print(content[:500])
-
-    # 요약기(summarizer)를 통한 요약 결과 확인
-    summary = summarize(content)
-    print("\n[KBUWEL DEBUG] 요약 결과:")
-    print(summary)
 
 
 if __name__ == "__main__":

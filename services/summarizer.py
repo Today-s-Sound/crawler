@@ -72,14 +72,15 @@ def summarize(text: str, max_chars: int = 500) -> str:
     )
 
     max_retries = 3  # 최대 3번까지 재시도
-    base_delay = 20  # 대기 시간 (초) - Rate Limit을 고려하여 20초로 증가
+    # Rate Limit(15 RPM 기준) 여유를 조금 더 주기 위해 대기 시간 소폭 증가
+    base_delay = 30  # 1차 30초, 2차 60초 대기
 
     for attempt in range(max_retries):
         try:
-            # Rate Limit 방지: 매 요청마다 4초 대기 (15 RPM = 4초/요청)
+            # Rate Limit 방지: 매 요청마다 6초 대기 (15 RPM 보다 살짝 느리게)
             if attempt == 0:
-                time.sleep(4)
-                print(f"[summarizer] Rate Limit 방지: 4초 대기 완료")
+                time.sleep(6)
+                print(f"[summarizer] Rate Limit 방지: 6초 대기 완료")
             
             print(f"[summarizer] Calling Gemini API... (Attempt {attempt + 1}/{max_retries})")
             response = model.generate_content(prompt)
