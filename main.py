@@ -6,6 +6,7 @@ from sites.dongguk_sw_board import DonggukSwBoardCrawler
 from sites.kbuwel_notice import KbuwelNoticeCrawler
 from sites.ablenews import AbleNewsCrawler
 from sites.kead_notice import KeadNoticeCrawler
+from sites.silwel_notice import SilwelNoticeCrawler
 from services.subscription_client import fetch_subscriptions
 from services.notification_client import create_alert, update_subscription_last_seen
 from services.summarizer import summarize
@@ -98,6 +99,7 @@ def get_crawler_for_subscription(sub: Dict):
     - web.kbuwel.or.kr      → KbuwelNoticeCrawler
     - www.ablenews.co.kr    → AbleNewsCrawler
     - www.kead.or.kr       → KeadNoticeCrawler
+    - www.silwel.or.kr     → SilwelNoticeCrawler
     """
     site_type = sub.get("site_type")
     if site_type == "DONGGUK_SW":
@@ -108,6 +110,8 @@ def get_crawler_for_subscription(sub: Dict):
         return AbleNewsCrawler()
     if site_type == "KEAD":
         return KeadNoticeCrawler()
+    if site_type == "SILWEL":
+        return SilwelNoticeCrawler()
 
     # site_type 이 없으면 URL 도메인으로 추론
     url = sub.get("site_url", "")
@@ -120,6 +124,8 @@ def get_crawler_for_subscription(sub: Dict):
         return AbleNewsCrawler()
     if "kead.or.kr" in host:
         return KeadNoticeCrawler()
+    if "silwel.or.kr" in host:
+        return SilwelNoticeCrawler()
 
     # 기본값: 동국대 크롤러
     return DonggukSwBoardCrawler()
@@ -310,7 +316,6 @@ def main():
             except Exception as e:
                 sub_id = sub.get('id', 'unknown') if 'sub' in locals() else 'unknown'
                 print(f"[Sub {sub_id}] 처리 중 오류: {e}")
-
 
 if __name__ == "__main__":
     main()
