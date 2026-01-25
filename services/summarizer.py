@@ -18,7 +18,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 
-def _fallback_summarize(text: str, max_chars: int = 1000) -> str:
+def _fallback_summarize(text: str, max_chars: int = 500) -> str:
     """
     API 실패 시 폴백 로직.
     - 원문에서 메뉴/네비게이션이 아닌 실제 본문 부분만 추출 시도
@@ -46,7 +46,7 @@ def _fallback_summarize(text: str, max_chars: int = 1000) -> str:
     return result[:max_chars] + "..."
 
 
-def summarize(text: str, max_chars: int = 500) -> str:
+def summarize(text: str, max_chars: int = 300) -> str:
     """
     Gemini API를 사용해서 요약을 생성한다.
     - Rate Limit(429) 발생 시 지수 백오프(Exponential Backoff)로 재시도한다.
@@ -67,19 +67,25 @@ def summarize(text: str, max_chars: int = 500) -> str:
         "  - 장소\n"
         "  - 누가, 무엇을 하는지(강의/행사/모집 등 핵심 내용)\n"
         "- 개인정보 처리, 이메일 수집 거부, 저작권, 기타 안내 문구는 절대 요약에 포함하지 마세요.\n"
+        "\n"
+        "⚠️ 중요: 본문에 텍스트가 없고 이미지나 첨부파일만 있는 경우:\n"
+        "- 실제 본문 텍스트가 거의 없거나, 이미지 파일명이나 첨부파일 목록만 있는 경우\n"
+        "- 이런 경우에는 '본문에 텍스트가 없고 이미지/첨부파일만 있습니다' 또는 '상세 내용은 원문 페이지를 참고하세요'와 같은 간단한 안내 문구를 반환하세요.\n"
+        "\n"
         f"최대 {max_chars}자 이내로 작성해 주세요.\n\n"
         f"--- 원문 시작 ---\n{text}\n--- 원문 끝 ---"
     )
 
     max_retries = 3  # 최대 3번까지 재시도
-    base_delay = 20  # 대기 시간 (초) - Rate Limit을 고려하여 20초로 증가
+    # Rate Limit(15 RPM 기준) 여유를 조금 더 주기 위해 대기 시간 소폭 증가
+    base_delay = 30  # 1차 30초, 2차 60초 대기
 
     for attempt in range(max_retries):
         try:
-            # Rate Limit 방지: 매 요청마다 4초 대기 (15 RPM = 4초/요청)
+            # Rate Limit 방지: 매 요청마다 6초 대기 (15 RPM 보다 살짝 느리게)
             if attempt == 0:
-                time.sleep(4)
-                print(f"[summarizer] Rate Limit 방지: 4초 대기 완료")
+                time.sleep(6)
+                print(f"[summarizer] Rate Limit 방지: 6초 대기 완료")
             
             print(f"[summarizer] Calling Gemini API... (Attempt {attempt + 1}/{max_retries})")
             response = model.generate_content(prompt)
